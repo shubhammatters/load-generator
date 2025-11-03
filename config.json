@@ -1,0 +1,28 @@
+{
+  "files_per_type": 10,
+  "records_per_file": 100,
+  "file_size_target_mb": 10,
+  "countries": [
+    "uk",
+    "india",
+    "us"
+  ],
+  "sensitive_types": [
+    "pii",
+    "pci",
+    "financial"
+  ],
+  "file_types": [
+    "pdf",
+    "xlsx",
+    "html",
+    "csv",
+    "json",
+    "zip",
+    "png",
+    "jpg"
+  ],
+  "worker_count": 10,
+  "output_dir": "output"
+}
+
