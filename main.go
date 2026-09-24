@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
@@ -55,6 +56,7 @@ func main() {
 	fmt.Printf("  File types: %v\n", cfg.FileTypes)
 	fmt.Printf("  Worker count: %d\n", cfg.WorkerCount)
 	fmt.Printf("  Output directory: %s\n", cfg.OutputDir)
+	fmt.Printf("  Non-sensitive %%: %d\n", cfg.NonSensitivePercent)
 	fmt.Println()
 
 	// Create output directory
@@ -149,13 +151,27 @@ func worker(id int, jobs <-chan GeneratorJob, wg *sync.WaitGroup, generators map
 
 	// Create data generator with worker-specific seed
 	dataGen := data.NewGenerator(time.Now().UnixNano() + int64(id))
+	// Separate RNG just for the sensitive/non-sensitive coin flip below, so it
+	// doesn't perturb dataGen's own record-generation sequence.
+	rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id) + 1))
 
 	for job := range jobs {
 		// Convert country string to data.Country type
 		country := data.Country(job.Country)
-		
-		// Generate records for the specific country
-		records := dataGen.GenerateRecords(cfg.RecordsPerFile, country)
+
+		// Randomizer: a configurable percentage of files get generic,
+		// non-identifying placeholder content instead of realistic PII/PCI/
+		// Financial data — routed to its own "non-sensitive" output folder
+		// (sensitiveType is just a path label, so no per-file-type generator
+		// needs to change for this).
+		outputLabel := job.SensitiveType
+		var records []*data.Record
+		if cfg.NonSensitivePercent > 0 && rng.Intn(100) < cfg.NonSensitivePercent {
+			records = dataGen.GenerateRandomRecords(cfg.RecordsPerFile, country)
+			outputLabel = "non-sensitive"
+		} else {
+			records = dataGen.GenerateRecords(cfg.RecordsPerFile, country)
+		}
 
 		// Get appropriate generator
 		generator, exists := generators[job.FileType]
@@ -166,9 +182,9 @@ func worker(id int, jobs <-chan GeneratorJob, wg *sync.WaitGroup, generators map
 		}
 
 		// Generate file with country
-		err := generator.Generate(cfg.OutputDir, job.Country, job.SensitiveType, records, job.FileIndex)
+		err := generator.Generate(cfg.OutputDir, job.Country, outputLabel, records, job.FileIndex)
 		if err != nil {
-			log.Printf("Worker %d: Failed to generate %s/%s/%s file %d: %v", id, job.FileType, job.Country, job.SensitiveType, job.FileIndex, err)
+			log.Printf("Worker %d: Failed to generate %s/%s/%s file %d: %v", id, job.FileType, job.Country, outputLabel, job.FileIndex, err)
 			atomic.AddInt32(failedJobs, 1)
 		} else {
 			atomic.AddInt32(completedJobs, 1)

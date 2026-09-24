@@ -18,11 +18,10 @@
     "html",
     "csv",
     "json",
-    "zip",
     "png",
     "jpg"
   ],
   "worker_count": 10,
-  "output_dir": "output"
+  "output_dir": "output",
+  "non_sensitive_percent": 0
 }
-
