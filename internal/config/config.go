@@ -16,6 +16,7 @@ type Config struct {
 	FileTypes         []string `json:"file_types"`
 	WorkerCount       int      `json:"worker_count"`        // Number of concurrent workers
 	OutputDir         string   `json:"output_dir"`          // Output directory
+	NonSensitivePercent int    `json:"non_sensitive_percent"` // 0-100: % of files per (type,country) that get random/non-sensitive content instead of realistic PII/PCI/Financial
 }
 
 // DefaultConfig returns default configuration values
@@ -26,9 +27,12 @@ func DefaultConfig() *Config {
 		FileSizeTargetMB: 10,
 		Countries:        []string{"uk", "india", "us"},
 		SensitiveTypes:   []string{"pii", "pci", "financial"},
-		FileTypes:        []string{"pdf", "xlsx", "html", "csv", "json", "zip", "png", "jpg"},
+		// .zip excluded on purpose — confirmed twice in the endpoint-agent load
+		// test's own KT/meeting notes that it should not be used for load generation.
+		FileTypes:        []string{"pdf", "xlsx", "html", "csv", "json", "png", "jpg"},
 		WorkerCount:      10,
 		OutputDir:        "output",
+		NonSensitivePercent: 0,
 	}
 }
 
@@ -105,6 +109,9 @@ func (c *Config) Validate() error {
 	}
 	if c.WorkerCount <= 0 {
 		c.WorkerCount = 10 // Set default
+	}
+	if c.NonSensitivePercent < 0 || c.NonSensitivePercent > 100 {
+		return fmt.Errorf("non_sensitive_percent must be between 0 and 100")
 	}
 	if c.OutputDir == "" {
 		c.OutputDir = "output"

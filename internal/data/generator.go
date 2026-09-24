@@ -658,3 +658,68 @@ func (g *Generator) GenerateRecords(count int, country Country) []*Record {
 	return records
 }
 
+// GenerateRandomRecord creates a record with the same shape as GenerateRecord
+// (so every existing file-type generator works unchanged) but filled with
+// obviously-generic, non-identifying placeholder values instead of realistic
+// PII/PCI/Financial data. Deliberately fixed/boring rather than random noise —
+// random-looking digit/character sequences have been observed to still trigger
+// false-positive sensitive-data classification, which defeats the purpose.
+func (g *Generator) GenerateRandomRecord(country Country) *Record {
+	record := &Record{
+		Country:           country,
+		FirstName:         "Test",
+		LastName:          "User",
+		FullName:          "Test User",
+		DateOfBirth:       "01/01/2000",
+		Email:             "test.user@example.com",
+		FullAddress:       "123 Test Street, Test City, TE5T 1NG",
+		PhoneNumber:       "0000000000",
+		MobileNumber:      "0000000000",
+		PassportNumber:    "000000000",
+		CardNumber:        "0000 0000 0000 0000",
+		CardType:          "N/A",
+		CVV:               "000",
+		ExpiryDate:        "01/00",
+		BankAccountNumber: "00000000",
+		BankRoutingNumber: "000000000",
+		SortCode:          "00-00-00",
+		IFSCCode:          "TEST0000000",
+		IBAN:              "GB00TEST00000000000000",
+		TaxReference:      "0000000000",
+		AnnualIncome:      "N/A",
+	}
+
+	switch country {
+	case UK:
+		record.NHSNumber = "000 000 0000"
+		record.NationalInsurance = "AA000000A"
+		record.UKPostcode = "TE5T 1NG"
+		record.UKDrivingLicense = "TESTS000000TE9IJ"
+	case India:
+		record.AadhaarNumber = "0000 0000 0000"
+		record.PANNumber = "AAAAA0000A"
+		record.IndianPostcode = "000000"
+		record.IndianState = "Test State"
+		record.IndianDrivingLicense = "TS00 2000TEST0000"
+	case US:
+		record.SSN = "000-00-0000"
+		record.GreenCard = "AAA0000000000"
+		record.USZipCode = "00000"
+		record.USState = "Test State"
+		record.USDrivingLicense = "A0000000"
+	}
+
+	return record
+}
+
+// GenerateRandomRecords generates multiple non-sensitive placeholder records
+// for a specific country — the counterpart to GenerateRecords for the
+// randomizer feature.
+func (g *Generator) GenerateRandomRecords(count int, country Country) []*Record {
+	records := make([]*Record, count)
+	for i := 0; i < count; i++ {
+		records[i] = g.GenerateRandomRecord(country)
+	}
+	return records
+}
+
