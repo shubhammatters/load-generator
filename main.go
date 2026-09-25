@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"hash/fnv"
 	"log"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
@@ -146,14 +146,30 @@ func main() {
 	fmt.Println("═══════════════════════════════════════════════")
 }
 
+// isNonSensitive deterministically decides whether this job's file index
+// should get non-sensitive content. Keyed on (fileTypeGroup, country,
+// sensitiveType, fileIndex) — NOT plain (country, fileIndex) — so that only
+// jobs sharing an actual output-writing generator agree with each other.
+// png/jpg are folded into one "image" group since ImageGenerator.Generate()
+// writes both on every call (see the call site); every other file type and
+// every distinct sensitiveType stay independent, same as before, so multiple
+// sensitive_types (pii/pci/financial) sharing a (country,fileIndex) don't all
+// collide into the same non-sensitive/ path and silently overwrite each other.
+func isNonSensitive(fileType, country, sensitiveType string, fileIndex int, percent int) bool {
+	fileTypeGroup := fileType
+	if fileType == "png" || fileType == "jpg" {
+		fileTypeGroup = "image"
+	}
+	h := fnv.New32a()
+	h.Write([]byte(fmt.Sprintf("%s-%s-%s-%d", fileTypeGroup, country, sensitiveType, fileIndex)))
+	return int(h.Sum32()%100) < percent
+}
+
 func worker(id int, jobs <-chan GeneratorJob, wg *sync.WaitGroup, generators map[string]FileGenerator, cfg *config.Config, completedJobs, failedJobs *int32) {
 	defer wg.Done()
 
 	// Create data generator with worker-specific seed
 	dataGen := data.NewGenerator(time.Now().UnixNano() + int64(id))
-	// Separate RNG just for the sensitive/non-sensitive coin flip below, so it
-	// doesn't perturb dataGen's own record-generation sequence.
-	rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id) + 1))
 
 	for job := range jobs {
 		// Convert country string to data.Country type
@@ -164,9 +180,21 @@ func worker(id int, jobs <-chan GeneratorJob, wg *sync.WaitGroup, generators map
 		// Financial data — routed to its own "non-sensitive" output folder
 		// (sensitiveType is just a path label, so no per-file-type generator
 		// needs to change for this).
+		//
+		// DETERMINISTIC per (country, fileIndex), not a fresh random draw per
+		// job: ImageGenerator.Generate() writes BOTH png and jpg on every call
+		// regardless of which job triggered it (see internal/files/image.go).
+		// Before this feature existed that was harmless — the png job and jpg
+		// job for the same file index always shared the same sensitiveType, so
+		// they'd overwrite each other's files identically. With a per-job
+		// random coin flip, the png and jpg jobs for the same index could land
+		// in DIFFERENT output folders, leaving stray extra files behind (found
+		// via testing: 63 jobs completed but 65 files on disk). Deriving the
+		// decision from (country, fileIndex) instead of per-job randomness
+		// means every file-type job for the same index agrees.
 		outputLabel := job.SensitiveType
 		var records []*data.Record
-		if cfg.NonSensitivePercent > 0 && rng.Intn(100) < cfg.NonSensitivePercent {
+		if cfg.NonSensitivePercent > 0 && isNonSensitive(job.FileType, job.Country, job.SensitiveType, job.FileIndex, cfg.NonSensitivePercent) {
 			records = dataGen.GenerateRandomRecords(cfg.RecordsPerFile, country)
 			outputLabel = "non-sensitive"
 		} else {
